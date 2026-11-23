@@ -146,22 +146,24 @@ for i, j in pares:
     rho[i + "-" + j] = c / (std[i] * std[j])
     print(f"Cov(R_{i},R_{j}) = (1/{N}) × {terminos(prod)} = (1/{N}) × {prod.sum():.6f} = {c:.6f}")
     print(f"ρ_{i},{j} = {c:.6f} / ({std[i]:.6f} × {std[j]:.6f}) = {rho[i + '-' + j]:.4f}")
-par_div = min(rho, key=rho.get)
-print(f"Par con menor correlación (mayor potencial de diversificación): {par_div} (ρ = {rho[par_div]:.4f})\n")
+print("Pares de menor a mayor correlación (entre menor ρ, más potencial de diversificación):")
+for par in sorted(rho, key=rho.get):
+    print(f"  {par}: ρ = {rho[par]:.4f}")
+print()
 
 # 7. Cartera P con A, B y C
 # Pesos proporcionales al precio del riesgo: w_i = p_i / (p_A + p_B + p_C)
+# Le damos más peso al activo que paga más rendimiento extra por cada unidad de riesgo
 print("--- 7. Cartera P (A, B y C) ---")
 if (p_riesgo[riesgosos] <= 0).any():
-    # con un p_i negativo los pesos proporcionales no tienen sentido
-    print("OJO: hay un precio del riesgo negativo, así que se usan pesos iguales (1/3 cada uno)")
-    w = pd.Series(1 / 3, index=riesgosos)
-else:
-    suma_p = p_riesgo[riesgosos].sum()
-    w = p_riesgo[riesgosos] / suma_p
-    print("w_i = p_i / (p_A + p_B + p_C)")
-    for i in riesgosos:
-        print(f"w_{i} = {p_riesgo[i]:.4f} / {suma_p:.4f} = {w[i]:.4f}")
+    # con algún p_i <= 0 este método ya no tiene sentido, hay que elegir los pesos de otra forma
+    raise ValueError("Hay un precio del riesgo <= 0: no se pueden usar pesos proporcionales a p_i")
+
+suma_p = p_riesgo[riesgosos].sum()
+w = p_riesgo[riesgosos] / suma_p
+print("w_i = p_i / (p_A + p_B + p_C)")
+for i in riesgosos:
+    print(f"w_{i} = {p_riesgo[i]:.4f} / {suma_p:.4f} = {w[i]:.4f}")
 print(f"w_A + w_B + w_C = {w.sum():.4f}")
 
 r_P_s = w["A"] * rend["A"] + w["B"] * rend["B"] + w["C"] * rend["C"]
@@ -179,11 +181,18 @@ print(f"σ_P = √{var_P:.6f} = {std_P:.6f} ({std_P:.4%})")
 
 # Si no hubiera diversificación, el riesgo de P sería el promedio ponderado de las σ
 std_sin_div = (w * std[riesgosos]).sum()
-menor = std[riesgosos].idxmin()
 print(f"σ ponderada sin diversificar = Σ w_i σ_i = {w['A']:.4f} × {std['A']:.6f} + "
       f"{w['B']:.4f} × {std['B']:.6f} + {w['C']:.4f} × {std['C']:.6f} = {std_sin_div:.6f}")
 print(f"Reducción de riesgo por diversificar: {std_sin_div:.4%} - {std_P:.4%} = {std_sin_div - std_P:.4%}")
-print(f"Activo individual con menor riesgo: {menor} (σ = {std[menor]:.4%})  vs  σ_P = {std_P:.4%}\n")
+
+# Comparación directa contra tener un solo activo (riesgo y rendimiento)
+print("Cartera P vs tener un solo activo:")
+for i in riesgosos:
+    riesgo = "menos" if std_P < std[i] else "más"
+    rendim = "más" if r_P > r[i] else "menos"
+    print(f"  vs {i}: σ_P = {std_P:.4%} vs σ_{i} = {std[i]:.4%} ({riesgo} riesgo)  |  "
+          f"r_P = {r_P:.4%} vs r_{i} = {r[i]:.4%} ({rendim} rendimiento)")
+print()
 
 # 8. Covarianza de A, B y C con el mercado
 cov_m = {}
@@ -215,10 +224,19 @@ for i in riesgosos:
     print(f"β_{i} σ_m = {beta[i]:.4f} × {std['M']:.6f} = {riesgo_mkt[i]:.6f} ({riesgo_mkt[i]:.4%})")
 print()
 
+# Para decir si dos valores son "iguales" se usa una tolerancia de 5e-7:
+# una diferencia que ya no se ve con los 6 decimales que se imprimen se toma como 0
+tol = 5e-7
+
 print("--- 11. Rendimiento ajustado por el riesgo vs r_f ---")
 print(f"r_i - β_i (r_m - r_f)   ;   r_f = {rf:.6f}")
 for i in riesgosos:
-    comparacion = "mayor que r_f" if r_ajustado[i] > rf else "menor que r_f"
+    if np.isclose(r_ajustado[i], rf, rtol=0, atol=tol):
+        comparacion = "igual a r_f"
+    elif r_ajustado[i] > rf:
+        comparacion = "mayor que r_f"
+    else:
+        comparacion = "menor que r_f"
     print(f"{i}: {r[i]:.6f} - {beta[i]:.4f} × ({r['M']:.6f} - {rf:.6f}) = {r_ajustado[i]:.6f}  -> {comparacion}")
 print()
 
@@ -228,18 +246,17 @@ for i in riesgosos:
     print(f"r_{i}* = {rf:.6f} + {beta[i]:.4f} × ({r['M']:.6f} - {rf:.6f}) = {r_capm[i]:.6f} ({r_capm[i]:.4%})")
 print()
 
-# Se redondea a 6 decimales para decidir si está "sobre" la recta,
-# porque con todos los decimales la diferencia casi nunca da exactamente 0
+# Misma tolerancia que en el punto 11, así los dos puntos siempre coinciden
 posicion = {}
 print("--- 13. Observado vs CAPM ---")
 print("r_i - r_i*")
 for i in riesgosos:
-    if round(dif[i], 6) > 0:
-        posicion[i] = "Por encima de la recta de mercado"
-    elif round(dif[i], 6) < 0:
-        posicion[i] = "Por debajo de la recta de mercado"
-    else:
+    if np.isclose(dif[i], 0, rtol=0, atol=tol):
         posicion[i] = "Sobre la recta de mercado"
+    elif dif[i] > 0:
+        posicion[i] = "Por encima de la recta de mercado"
+    else:
+        posicion[i] = "Por debajo de la recta de mercado"
     print(f"{i} ({tickers[i]}): {r[i]:.6f} - {r_capm[i]:.6f} = {dif[i]:+.6f} ({dif[i]:+.4%})  -> {posicion[i]}")
 print()
 
