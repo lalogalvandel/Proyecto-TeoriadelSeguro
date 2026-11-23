@@ -10,11 +10,10 @@ tickers = {
     "C": "NEM"    
 }
 
-# Ventana de 5 años cerrados (octubre 2021 a octubre 2026 = 61 cierres -> 60 rendimientos) hola 
 inicio = "2021-10-01"
 fin = "2026-10-31"
 
-# Descarga de precios de cierre ajustados por dividendos y splits
+
 raw_data = yf.download(
     list(tickers.values()),
     start=inicio,
@@ -23,39 +22,34 @@ raw_data = yf.download(
     auto_adjust=True,
     progress=False
 )["Close"]
-
-# Renombrar columnas a M, A, B, C y verificar alineación exacta sin NaNs
 inv_map = {v: k for k, v in tickers.items()}
 precios = raw_data.rename(columns=inv_map)[["M", "A", "B", "C"]].dropna()
 
-# Cálculo de rendimientos simples mensuales: r_{i,s} = (P_s - P_{s-1}) / P_{s-1}
+
 rendimientos = precios.pct_change().dropna()
 N = len(rendimientos)
-pi_s = 1.0 / N  # Probabilidad equiprobable por periodo histórico
+pi_s = 1.0 / N  
 
 assert N == 60, f"Atención: se obtuvieron {N} rendimientos en lugar de 60. Ajusta las fechas."
 
-# Tasa libre de riesgo F: US Treasury Bill 13 semanas (^IRX) en los mismos 60 meses
-rf_raw = yf.download("^IRX", start=inicio, end=fin, interval="1mo", progress=False)["Close"].dropna()
-rf_raw = rf_raw.loc[rendimientos.index]  # Mismos 60 periodos exactos de los rendimientos
-rf_anual_prom = float(rf_raw.mean().iloc[0]) / 100.0  # Convertir de % a decimal
-r_f = (1.0 + rf_anual_prom) ** (1.0 / 12.0) - 1.0     # Tasa efectiva mensual
 
-# Guardar tablas base en CSV para anexos y reproducibilidad
+rf_raw = yf.download("^IRX", start=inicio, end=fin, interval="1mo", progress=False)["Close"].dropna()
+rf_raw = rf_raw.loc[rendimientos.index] 
+rf_anual_prom = float(rf_raw.mean().iloc[0]) / 100.0  
+r_f = (1.0 + rf_anual_prom) ** (1.0 / 12.0) - 1.0    
+
+
 precios.to_csv("tabla_precios_mensuales.csv")
 rendimientos.to_csv("tabla_rendimientos_mensuales.csv")
 
 print(f"Observaciones (N): {N} | Probabilidad por estado (pi_s): {pi_s:.6f}")
 print(f"Tasa libre de riesgo anual promedio: {rf_anual_prom:.6%} | r_f mensual: {r_f:.6%}\n")
 
-# ==============================================================================
-# 1, 2, 3 y 4. RENDIMIENTO ESPERADO, VARIANZA, DESVIACIÓN TÍPICA Y PRECIO DEL RIESGO
-# ==============================================================================
 activos = ["M", "A", "B", "C"]
-r = {}       # Rendimiento esperado r_i
-var = {}     # Varianza sigma_i^2
-std = {}     # Desviación típica sigma_i
-p_riesgo = {} # Precio del riesgo p_i
+r = {}      
+var = {}   
+std = {}    
+p_riesgo = {} 
 
 print("=== PUNTOS 1 A 4: ESTADÍSTICOS INDIVIDUALES Y PRECIO DEL RIESGO ===")
 for i in activos:
@@ -70,10 +64,6 @@ for i in activos:
 mejor_p = max(p_riesgo, key=p_riesgo.get)
 print(f"-> Mayor precio del riesgo: {mejor_p} ({p_riesgo[mejor_p]:.6f})\n")
 
-# ==============================================================================
-# 5. COMPARACIÓN AL MISMO NIVEL DE RIESGO OBJETIVO (CARTERAS F-M, F-A, F-B, F-C)
-# ==============================================================================
-# Supuesto explícito: fijamos el riesgo objetivo igual al riesgo del mercado (sigma_x = sigma_M)
 sigma_x = std["M"]
 x_inv = {}
 r_x = {}
@@ -87,9 +77,6 @@ for i in activos:
 mejor_oportunidad = max(r_x, key=r_x.get)
 print(f"-> Alternativa que más amplía el conjunto de oportunidades: F-{mejor_oportunidad} (r_x = {r_x[mejor_oportunidad]:.6%})\n")
 
-# ==============================================================================
-# 6. COVARIANZAS Y CORRELACIONES ENTRE PARES (A-B, A-C, B-C)
-# ==============================================================================
 pares = [("A", "B"), ("A", "C"), ("B", "C")]
 cov_pares = {}
 rho_pares = {}
@@ -103,9 +90,6 @@ for i, j in pares:
     print(f"Par {i}-{j}: Cov(R_{i}, R_{j}) = {cov_pares[(i, j)]:.8f} | rho_{{{i},{j}}} = {rho_pares[(i, j)]:.6f}")
 print()
 
-# ==============================================================================
-# 7. CARTERA P FORMADA POR A, B Y C (PESOS PROPORCIONALES AL PRECIO DEL RIESGO)
-# ==============================================================================
 print("=== PUNTO 7: CARTERA P (A, B, C) CON PESOS PROPORCIONALES A p_i ===")
 if all(p_riesgo[k] > 0 for k in ["A", "B", "C"]):
     suma_p = p_riesgo["A"] + p_riesgo["B"] + p_riesgo["C"]
@@ -119,7 +103,7 @@ r_P_s = (w["A"] * rendimientos["A"].to_numpy(dtype=np.float64) +
          w["B"] * rendimientos["B"].to_numpy(dtype=np.float64) +
          w["C"] * rendimientos["C"].to_numpy(dtype=np.float64))
 
-# Guardar rendimiento por estado de la cartera P en la tabla de rendimientos
+
 rendimientos["r_P"] = r_P_s
 rendimientos.to_csv("tabla_rendimientos_con_cartera_P.csv")
 
@@ -133,9 +117,6 @@ print(f"Cartera P: r_P = {r_P:.6%} | sigma_P^2 = {var_P:.8f} | sigma_P = {std_P:
 print(f"Promedio ponderado de desviaciones individuales: {std_ponderada_sin_div:.6%}")
 print(f"Reducción de riesgo por diversificación: {(std_ponderada_sin_div - std_P):.6%}\n")
 
-# ==============================================================================
-# 8, 9, 10, 11, 12 y 13. ANÁLISIS CAPM Y RECTA DEL MERCADO DE VALORES (SML)
-# ==============================================================================
 print("=== PUNTOS 8 A 13: RIESGO SISTEMÁTICO, BETAS Y EQUILIBRIO CAPM ===")
 m_s = rendimientos["M"].to_numpy(dtype=np.float64)
 r_m = r["M"]
@@ -150,17 +131,17 @@ r_capm = {}
 
 for i in ["A", "B", "C"]:
     r_is = rendimientos[i].to_numpy(dtype=np.float64)
-    # 8. Covarianza con el mercado
+
     cov_m[i] = np.sum(pi_s * (r_is - r[i]) * (m_s - r_m))
-    # 9. Beta
+
     beta[i] = cov_m[i] / var_m
-    # 10. Cantidad de riesgo de mercado
+
     riesgo_mercado[i] = beta[i] * std_m
-    # 11. Rendimiento ajustado por riesgo observado
+
     r_ajustado[i] = r[i] - beta[i] * (r_m - r_f)
-    # 12. Rendimiento esperado de equilibrio CAPM
+   
     r_capm[i] = r_f + beta[i] * (r_m - r_f)
-    # 13. Clasificación respecto a la recta de mercado
+    
     diferencia = r[i] - r_capm[i]
     if np.isclose(diferencia, 0.0, atol=1e-7):
         posicion = "SOBRE la recta de mercado (en equilibrio)"
@@ -177,9 +158,6 @@ for i in ["A", "B", "C"]:
     print(f" 12. CAPM (r_{i}*)        = {r_capm[i]:.6%}")
     print(f" 13. Clasificación        = {posicion} (Alfa = {diferencia:+.6%})\n")
 
-# ==============================================================================
-# GRÁFICA DE LA RECTA DEL MERCADO DE VALORES (SML - PUNTO 13)
-# ==============================================================================
 betas_grid = np.linspace(0, max(max(beta.values()), 1.2) * 1.15, 100)
 sml_grid = r_f + betas_grid * (r_m - r_f)
 
