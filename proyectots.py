@@ -40,6 +40,10 @@ else:
 # Rendimiento mensual de cada activo: r_s = P_s / P_(s-1) - 1
 rend = precios.pct_change().dropna()
 N = len(rend)
+
+# De oct-2021 a oct-2026 son 61 precios -> 60 rendimientos. Si sale otro número es que falta
+# algún mes (el dropna lo quitaría y un rendimiento abarcaría dos meses)
+assert N == 60, f"Se esperaban 60 rendimientos mensuales y salieron {N}"
 meses = rend.index.strftime("%Y-%m").rename("Mes")
 
 # Cada mes se toma como un estado s y todos los meses tienen la misma probabilidad
@@ -54,8 +58,11 @@ print(f"Periodo: {meses[0]} a {meses[-1]} ({N} meses)")
 print(f"π_s = 1/{N} = {pi_s:.6f} en todos los estados  |  Σ π_s = {tabla_rend['pi_s'].sum():.6f}")
 print("Nota: los números se muestran redondeados, pero los cálculos usan todos los decimales\n")
 
-# Tasa libre de riesgo: promedio de ^IRX en los mismos meses, convertida a tasa mensual equivalente
+# Tasa libre de riesgo: promedio de ^IRX en los mismos meses, convertida a tasa mensual equivalente.
+# Supuesto: ^IRX es una tasa de descuento anualizada y aquí se toma como tasa efectiva anual
+# (la diferencia es pequeña, pero hay que mencionarlo en el documento)
 irx_periodo = irx.reindex(rend.index)
+assert irx_periodo.notna().sum() == N, "Faltan meses de ^IRX (las fechas no coinciden con las de los rendimientos)"
 rf_anual = irx_periodo.mean() / 100
 rf = (1 + rf_anual) ** (1 / 12) - 1
 
