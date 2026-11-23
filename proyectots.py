@@ -10,7 +10,7 @@ tickers = {
     "C": "NEM"    
 }
 
-# Ventana de 5 años cerrados (octubre 2021 a octubre 2026 = 61 cierres -> 60 rendimientos)
+# Ventana de 5 años cerrados (octubre 2021 a octubre 2026 = 61 cierres -> 60 rendimientos) hola 
 inicio = "2021-10-01"
 fin = "2026-10-31"
 
